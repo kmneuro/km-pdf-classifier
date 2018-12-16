@@ -1,0 +1,295 @@
+function onOpen() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet();
+  var entries = [
+  {name : "autolabel", functionName : "all"},
+  ];
+  
+  sheet.addMenu("Script", entries);
+}
+
+function all(){
+scanPdf4labels();
+gen();
+}
+
+function scanPdf4labels(){
+  // Get id
+  var s = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("pdf");
+  
+  // Clean previous sheet
+  try {
+  s.getRange(5, 1, s.getLastRow()-4, s.getLastColumn()).clear({contentsOnly: true, skipFilteredRows: true})
+  .clearFormat();
+} catch (e) {}
+
+  // Extract pdf URL and google ID
+  var url = s.getRange(2, 1).getDisplayValue();
+  if(url.indexOf("/")>0){
+    url = url.split("/");
+    var id = url[5];
+ }
+ 
+  // Extract text from PDF
+  var t = pdf2text(id);
+  var t = t.toLowerCase();
+  
+  // Find labels
+  var sla = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("labels");
+  var d = sla.getDataRange().getValues();
+  var h = d[0];
+  var i4lab = h.indexOf("label");  
+
+  var labelsList = new Array;
+  var keywordsList = new Array;
+
+  var nlab = d.length-1;
+  for (var i=1;i<nlab;i++){
+    labelsList.push(d[i][i4lab]);
+    keywordsList.push(d[i][i4lab-1]);
+  }
+  
+
+  // scan text for keywords behind each label and count them
+  var n4Label = new Array;  
+  
+  for (var iLab=0; iLab<labelsList.length;iLab++){
+    var label = labelsList[iLab];
+     var keywords = keywordsList[iLab];
+     keywords = keywords.split(",");
+     var n4keywords = 0;
+
+     for (var ik=0; ik<keywords.length;ik++){
+       
+       var temp = t;
+       var keyword = " "+keywords[ik]+" ";
+       keyword = keyword.toLowerCase();
+       
+       if (keyword ==" "){
+         continue;
+       }
+
+       var indexes4keyword = new Array;
+       var i4 = temp.indexOf(keyword);
+       indexes4keyword.push(i4);
+     
+     
+     // count reiteration of keywords
+     while (i4 > 0) {
+          temp = temp.substring(i4+keyword.length,temp.length);
+          Logger.log(temp);
+
+          // search for next match
+          i4 = temp.indexOf(keyword);
+          indexes4keyword.push(i4);
+        }
+        
+     n4keywords = n4keywords+indexes4keyword.length-1;
+    }
+    n4Label.push(n4keywords);
+    sla.getRange(iLab+2,i4lab+2).setValue(n4Label[iLab]);
+  }
+
+  // Find other keywords and extract text
+  var ksh= SpreadsheetApp.getActiveSpreadsheet().getSheetByName("keywords");
+  var d = ksh.getDataRange().getValues();
+  keywords = ksh.getRange(2, 1, d.length-1).getValues();
+
+  var i0 = 5;
+  var window = ksh.getRange(2, 2).getValue();
+  
+  for (i=0;i<keywords.length;i++){
+       temp = t;
+       keyword = keywords[i][0];
+       keyword = keyword.toLowerCase();
+       var txtKeyword = "examplekeyword"
+     i4 = 1;  
+     // count reiteration of keywords
+     while (i4 > 0) {
+          temp = temp.substring(i4+keyword.length,temp.length);
+          i4 = temp.indexOf(keyword);
+        if ( i4>0){
+            txtKeyword = temp.substring(i4-window,i4+window);
+            txtKeywork = removeLineBreaks(txtKeyword);
+        
+            s.getRange(i0,3).setValue(keyword);
+            s.getRange(i0,3).setBackgroundRGB(200, 200, 200);
+            s.getRange(i0,4).setValue(txtKeyword);
+            i0=i0+1;
+         }         
+     }
+  
+  }
+  
+  }
+
+function removeLineBreaks(text) {
+
+
+          var start = 1;
+          var finish = text.length;
+          var oldText = text;
+          if (oldText.match(/\r/)) {
+            var number = oldText.match(/\r/g).length;
+            for (var j = 0; j < number; j++) {
+              var location = oldText.search(/\r/);
+              text.deleteText(start + location, start + location);
+              text.insertText(start + location, ' ');
+              var oldText = oldText.replace(/\r/, ' ');
+            }
+          }
+          return oldText;
+        }
+       
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function sortGetInd(t){
+//var t = [ 6, 23, 7, 9]; 
+var indexedTest = t.map(function(e,i){return {ind: i, val: e}});
+indexedTest.sort(function(x, y){return x.val < y.val ? 1 : x.val == y.val ? 0 : -1});
+var indices = indexedTest.map(function(e){return e.ind});
+return indices;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+function pdf2text(id) {
+  //var id = "0B0RKoPNOx97bS3Z3dkFsckNyS2c";
+
+  // Ensure Advanced Drive Service is enabled
+  try {
+    Drive.Files.list();
+  }
+  catch (e) {
+    throw new Error( "To use pdfToText(), first enable 'Drive API' in Resources > Advanced Google Services." );
+  }
+    
+// convert images of the pdf to text
+  var image = DriveApp.getFileById(id).getBlob();
+  var file = {title: 'PDF2GDocCreated',mimeType: 'image/png'};
+  file = Drive.Files.insert(file, image, {ocr: true});
+  var body = DocumentApp.openById(file.id).getBody();
+  var imgs = body.getImages();
+  for (var i = 0; i < imgs.length; i++) {
+    imgs[i].removeFromParent();
+  }
+  var bodytxt =   body.getText();
+  //Logger.log(bodytxt);
+  DriveApp.removeFile(DriveApp.getFileById(file.id));
+  var output =bodytxt; 
+  return output;
+  }
+
+function extendLabels(l){
+  //var l = "Rodent,rat ,mouse,primate,human";
+  //l = l.split(",");
+
+  var o = new Array;
+  var i=0;
+  for (i in l){
+    if ( l[i]==""){continue;};
+    var a = new Array;
+    
+    a.push(" "+l[i]+" ");
+    a.push(l[i]+"s");
+    a.push(" "+l[i].toLowerCase()+" ");//plural
+    
+    o.push(a);
+
+  }
+  
+  return o;
+  
+}
+
+function insertAutolabel(){
+  deleteTriggers()
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s=ss.getSheetByName("labels");
+
+
+  s.showSheet();
+  
+  autolabelling();
+
+
+}
+
+
+
+function autolabelling(){
+
+var s = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("pdf");
+var sla = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("labels");
+
+var d = sla.getDataRange().getValues();
+var h = d[0];
+var i4lab = h.indexOf("label");
+var la = "Model,Reg,Met,Task,Strain,Neurons,Ephys";
+la = la.split(",");
+
+// get data
+var url = s.getRange(1, 2).getDisplayValue();
+url = url.split("/");
+var id = url[5];
+
+labelCount=scanPdf4labels(url);
+
+
+
+}
+
+function gen() {
+  var s = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("pdf");
+  var sla = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("labels");
+  
+  var d = sla.getDataRange().getValues();
+
+  
+  var h = d[0];
+  var i4lab = h.indexOf("label");
+  var nla = d.length-1;
+  var i0 = 5;
+   for (i=1;i<nla;i++){
+    var n = d[i][i4lab+1];
+    
+   if ( n>1){
+
+      s.getRange(i0,1).setValue(d[i][0]+"/"+d[i][1]+"/"+d[i][2]+"/"+d[i][3]+"/"+d[i][4] + " ("+ d[i][i4lab+1] +")");
+      s.getRange(i0,1).setBackground(sla.getRange(i+1,1).getBackground());
+      s.getRange(i0,1).setFontColor(sla.getRange(i+1,1).getFontColor());
+      s.getRange(i0,1).setFontWeight(sla.getRange(i+1,1).getFontWeight);
+      s.getRange(i0,1).setFontSize(8);
+
+      i0=i0+1;
+   
+   }
+   
+   }
+  
+  labelKeyword();
+}
+
+function labelKeyword() {
+
+var s = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("pdf");
+var d = s.getRange(5,3,s.getLastRow()).getValues();
+
+  for (var i=0;i<d.length-4;i++){
+
+    if(d[i][0] == ""){continue;};
+
+    var cell = s.getRange(i+5, 4);
+    var keyword = s.getRange(i+5, 3).getValue();
+   var t = cell.getValue();
+   var i1 = t.indexOf(keyword);
+   var iend = i1+keyword.length;
+   cell.setRichTextValue(SpreadsheetApp.newRichTextValue()
+  .setText(t)
+  .setTextStyle(i1, iend, SpreadsheetApp.newTextStyle()
+  .setBold(true)
+  .setUnderline(true)
+  .setForegroundColor('#ff0000')
+  .build())
+  .build());
+  }
+};
